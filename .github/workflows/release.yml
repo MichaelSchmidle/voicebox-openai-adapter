@@ -1,0 +1,65 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/michaelschmidle/voicebox-openai-adapter
+          flavor: latest=false
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+      - id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VCS_REF=${{ github.sha }}
+            VERSION=${{ steps.meta.outputs.version }}
+          provenance: mode=max
+          sbom: true
+      - name: Attest image provenance
+        uses: actions/attest@v4
+        with:
+          subject-name: ghcr.io/michaelschmidle/voicebox-openai-adapter
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+      - name: Record immutable digest
+        run: |
+          echo "Image digest: \`${{ steps.build.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Pin production deployments to \`ghcr.io/michaelschmidle/voicebox-openai-adapter@${{ steps.build.outputs.digest }}\`." >> "$GITHUB_STEP_SUMMARY"
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v3
+        with:
+          generate_release_notes: true
+          body: |
+            Multi-architecture image: `linux/amd64`, `linux/arm64`
+
+            Production deployments should pin the image digest reported by this workflow.

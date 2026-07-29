@@ -1,0 +1,57 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "voicebox-openai-adapter"
+version = "0.1.0"
+description = "OpenAI-compatible text-to-speech adapter for Voicebox"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.116.0,<1",
+    "httpx>=0.28.0,<1",
+    "pydantic-settings>=2.10.0,<3",
+    "uvicorn>=0.35.0,<1",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.17.0,<2",
+    "pytest>=8.4.0,<9",
+    "pytest-cov>=6.2.0,<7",
+    "ruff>=0.12.0,<1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/voicebox_openai_adapter"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-config --strict-markers"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["voicebox_openai_adapter"]
+omit = [
+    "*/voicebox_openai_adapter/__main__.py",
+    "*/voicebox_openai_adapter/main.py",
+]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["voicebox_openai_adapter"]
+plugins = ["pydantic.mypy"]

@@ -1,33 +1,37 @@
 # Python
 __pycache__/
 *.py[cod]
-*.egg-info/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
 .coverage
 htmlcov/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
 .venv/
-dist/
-build/
 
-# Environment and secrets
+# Local tooling
+.uv-cache/
+.pytest-tmp/
+.test-tmp/
+
+# Local configuration and credentials
 .env
 .env.*
 !.env.example
 
-# Editors / OS
+# Generated audio and model artifacts
+*.aac
+*.flac
+*.mp3
+*.ogg
+*.opus
+*.pcm
+*.wav
+*.safetensors
+*.ckpt
+*.onnx
+
+# Editors and operating systems
 .idea/
 .vscode/
 .DS_Store
 Thumbs.db
-
-# Generated media and temporary files
-*.wav
-*.mp3
-*.flac
-*.aac
-*.opus
-*.pcm
-.tmp/
-tmp/
