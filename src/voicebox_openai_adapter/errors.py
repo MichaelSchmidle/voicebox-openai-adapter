@@ -12,7 +12,7 @@ class AdapterError(Exception):
     headers: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        super().__init__(self.message)
+        Exception.__init__(self, self.message)
 
     def body(self) -> dict[str, dict[str, str]]:
         return {
