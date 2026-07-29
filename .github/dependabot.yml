@@ -4,6 +4,7 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    versioning-strategy: lockfile-only
     groups:
       python:
         patterns:
@@ -12,6 +13,12 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # Keep the production runtime on Python 3.12. Digest updates remain enabled.
+      - dependency-name: python
+        update-types:
+          - version-update:semver-minor
+          - version-update:semver-major
   - package-ecosystem: github-actions
     directory: /
     schedule:
