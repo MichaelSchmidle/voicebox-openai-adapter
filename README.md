@@ -5,9 +5,10 @@ A small, production-oriented HTTP adapter that presents an
 and translates requests to [Voicebox](https://github.com/jamiepine/voicebox).
 Open WebUI is the first supported client, but the API is client-neutral.
 
-The adapter authenticates clients, maps OpenAI model and voice conventions to Voicebox,
-downloads the completed generation, and uses `ffmpeg` when the requested audio format or speed
-requires conversion. It does not cache, log, or persist speech text or audio.
+The adapter authenticates clients, maps OpenAI model and voice conventions to Voicebox, waits for
+asynchronous completion through a bounded status SSE stream, downloads the completed generation,
+and uses `ffmpeg` when the requested audio format or speed requires conversion. It does not cache,
+log, or persist speech text or audio.
 
 ## API
 
@@ -85,6 +86,9 @@ start when `ADAPTER_API_KEY` is missing or blank.
 | `MAX_AUDIO_BYTES` | no | `104857600` |
 | `FFMPEG_TIMEOUT_SECONDS` | no | `120` |
 | `LOG_LEVEL` | no | `INFO` |
+
+`VOICEBOX_REQUEST_TIMEOUT_SECONDS` is one wall-clock deadline covering the `/speak` request,
+generation-status stream, and audio download.
 
 The base URL is trusted administrator configuration only. It is never accepted from an API
 request. Configure `VOICEBOX_API_KEY` separately when Voicebox requires authentication; the

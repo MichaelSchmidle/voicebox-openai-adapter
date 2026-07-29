@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
-from collections.abc import Callable, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
 from typing import Any
 
 import httpx
@@ -12,6 +14,35 @@ from fastapi.testclient import TestClient
 from voicebox_openai_adapter.audio import AudioFormat
 from voicebox_openai_adapter.config import Settings
 from voicebox_openai_adapter.errors import AdapterError
+
+
+class AsyncChunkStream(httpx.AsyncByteStream):
+    def __init__(
+        self,
+        *chunks: bytes,
+        delay_seconds: float = 0,
+        terminal_error: httpx.HTTPError | None = None,
+    ) -> None:
+        self._chunks = chunks
+        self._delay_seconds = delay_seconds
+        self._terminal_error = terminal_error
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        for chunk in self._chunks:
+            if self._delay_seconds:
+                await asyncio.sleep(self._delay_seconds)
+            yield chunk
+        if self._terminal_error is not None:
+            raise self._terminal_error
+
+
+def sse_response(*statuses: str) -> httpx.Response:
+    body = b"".join(f"data: {json.dumps({'status': status})}\n\n".encode() for status in statuses)
+    return httpx.Response(
+        200,
+        content=body,
+        headers={"Content-Type": "text/event-stream"},
+    )
 
 
 def speech_request(**overrides: Any) -> dict[str, Any]:
@@ -525,6 +556,215 @@ def test_generation_identifier_cannot_escape_audio_route(
     assert calls == 1
     assert response.status_code == 502
     assert response.json()["error"]["code"] == "voicebox_protocol_error"
+
+
+def test_generating_synthesis_waits_for_sse_completion_before_audio_fetch(
+    client_for: Callable[..., Iterator[TestClient]],
+    settings: Settings,
+    auth_headers: dict[str, str],
+) -> None:
+    captured: list[httpx.Request] = []
+    audio = wav_bytes()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        if request.url.path == "/speak":
+            return httpx.Response(200, json={"id": "generation-async", "status": "generating"})
+        if request.url.path == "/generate/generation-async/status":
+            assert request.headers["accept"] == "text/event-stream"
+            return sse_response("loading_model", "generating", "completed")
+        if request.url.path == "/audio/generation-async":
+            return httpx.Response(200, content=audio, headers={"Content-Type": "audio/wav"})
+        raise AssertionError(f"Unexpected upstream request: {request.url.path}")
+
+    with client_for(handler, settings=settings) as client:
+        response = client.post(
+            "/v1/audio/speech",
+            headers=auth_headers,
+            json=speech_request(),
+        )
+
+    assert response.status_code == 200
+    assert response.content == audio
+    assert [request.url.path for request in captured] == [
+        "/speak",
+        "/generate/generation-async/status",
+        "/audio/generation-async",
+    ]
+
+
+@pytest.mark.parametrize(
+    "terminal_status",
+    ["failed", "error", "cancelled", "canceled", "not_found"],
+)
+def test_generation_failure_sse_is_sanitized_and_audio_is_not_fetched(
+    terminal_status: str,
+    client_for: Callable[..., Iterator[TestClient]],
+    settings: Settings,
+    auth_headers: dict[str, str],
+) -> None:
+    captured_paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured_paths.append(request.url.path)
+        if request.url.path == "/speak":
+            return httpx.Response(200, json={"id": "generation-async", "status": "generating"})
+        if request.url.path == "/generate/generation-async/status":
+            return httpx.Response(
+                200,
+                content=(f'data: {{"status": "{terminal_status}", "error": "private detail"}}\n\n'),
+                headers={"Content-Type": "text/event-stream"},
+            )
+        raise AssertionError("Audio must not be fetched after generation failure")
+
+    with client_for(handler, settings=settings) as client:
+        response = client.post(
+            "/v1/audio/speech",
+            headers=auth_headers,
+            json=speech_request(),
+        )
+
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "voicebox_generation_failed"
+    assert "private detail" not in response.text
+    assert captured_paths == ["/speak", "/generate/generation-async/status"]
+
+
+def test_malformed_generation_sse_is_rejected(
+    client_for: Callable[..., Iterator[TestClient]],
+    settings: Settings,
+    auth_headers: dict[str, str],
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/speak":
+            return httpx.Response(200, json={"id": "generation-async", "status": "generating"})
+        if request.url.path == "/generate/generation-async/status":
+            return httpx.Response(
+                200,
+                content=b"data: not-json\n\n",
+                headers={"Content-Type": "text/event-stream"},
+            )
+        raise AssertionError("Audio must not be fetched after malformed status data")
+
+    with client_for(handler, settings=settings) as client:
+        response = client.post(
+            "/v1/audio/speech",
+            headers=auth_headers,
+            json=speech_request(),
+        )
+
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "voicebox_protocol_error"
+
+
+def test_oversized_generation_sse_is_rejected(
+    client_for: Callable[..., Iterator[TestClient]],
+    settings: Settings,
+    auth_headers: dict[str, str],
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/speak":
+            return httpx.Response(200, json={"id": "generation-async", "status": "generating"})
+        if request.url.path == "/generate/generation-async/status":
+            return httpx.Response(
+                200,
+                content=b"data: " + (b"x" * 1_048_577),
+                headers={"Content-Type": "text/event-stream"},
+            )
+        raise AssertionError("Audio must not be fetched after oversized status data")
+
+    with client_for(handler, settings=settings) as client:
+        response = client.post(
+            "/v1/audio/speech",
+            headers=auth_headers,
+            json=speech_request(),
+        )
+
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "voicebox_response_too_large"
+
+
+def test_generation_sse_connection_loss_is_normalized(
+    client_for: Callable[..., Iterator[TestClient]],
+    settings: Settings,
+    auth_headers: dict[str, str],
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/speak":
+            return httpx.Response(200, json={"id": "generation-async", "status": "generating"})
+        if request.url.path == "/generate/generation-async/status":
+            return httpx.Response(
+                200,
+                stream=AsyncChunkStream(
+                    b'data: {"status": "generating"}\n\n',
+                    terminal_error=httpx.ReadError("private connection detail"),
+                ),
+                headers={"Content-Type": "text/event-stream"},
+            )
+        raise AssertionError("Audio must not be fetched after status connection loss")
+
+    with client_for(handler, settings=settings) as client:
+        response = client.post(
+            "/v1/audio/speech",
+            headers=auth_headers,
+            json=speech_request(),
+        )
+
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "voicebox_status_error"
+    assert "private connection detail" not in response.text
+
+
+def test_one_deadline_covers_speak_status_and_audio(
+    client_for: Callable[..., Iterator[TestClient]],
+    settings: Settings,
+    auth_headers: dict[str, str],
+) -> None:
+    configured = settings.model_copy(update={"voicebox_request_timeout_seconds": 0.12})
+    captured_paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured_paths.append(request.url.path)
+        if request.url.path == "/speak":
+            return httpx.Response(
+                200,
+                stream=AsyncChunkStream(
+                    b'{"id": "generation-async", "status": "generating"}',
+                    delay_seconds=0.02,
+                ),
+                headers={"Content-Type": "application/json"},
+            )
+        if request.url.path == "/generate/generation-async/status":
+            return httpx.Response(
+                200,
+                stream=AsyncChunkStream(
+                    b'data: {"status": "completed"}\n\n',
+                    delay_seconds=0.02,
+                ),
+                headers={"Content-Type": "text/event-stream"},
+            )
+        if request.url.path == "/audio/generation-async":
+            return httpx.Response(
+                200,
+                stream=AsyncChunkStream(wav_bytes(), delay_seconds=0.1),
+                headers={"Content-Type": "audio/wav"},
+            )
+        raise AssertionError(f"Unexpected upstream request: {request.url.path}")
+
+    with client_for(handler, settings=configured) as client:
+        response = client.post(
+            "/v1/audio/speech",
+            headers=auth_headers,
+            json=speech_request(),
+        )
+
+    assert response.status_code == 504
+    assert response.json()["error"]["code"] == "voicebox_timeout"
+    assert captured_paths == [
+        "/speak",
+        "/generate/generation-async/status",
+        "/audio/generation-async",
+    ]
 
 
 @pytest.mark.parametrize(

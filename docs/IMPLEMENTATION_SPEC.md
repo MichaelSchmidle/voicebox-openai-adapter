@@ -20,11 +20,17 @@ JSON request:
 - `personality`: optional boolean.
 - `language`: optional supported language code.
 
-It is synchronous: a successful response is a completed `GenerationResponse` containing at least `id`, `profile_id`, `text`, `language`, `status`, and `created_at`.
+It is asynchronous: a successful response is a `GenerationResponse` containing at least `id`, `profile_id`, `text`, `language`, `status`, and `created_at`. The initial status is normally `generating`.
+
+### `GET /generate/{generation_id}/status`
+
+Returns an SSE stream of JSON status events. Supported active statuses are `loading_model` and `generating`; `completed` is successful and `failed` is terminal. The adapter also treats `error`, `cancelled`, `canceled`, and `not_found` as terminal failures for forward compatibility.
+
+The adapter must validate the `text/event-stream` response, parse events incrementally, bound individual events and the complete stream, and reject malformed or unknown status payloads. A stream that disconnects or ends before a terminal event is an upstream failure.
 
 ### `GET /audio/{generation_id}`
 
-Returns the generated audio body after `/speak` succeeds.
+Returns the generated audio body after the status stream reports `completed`.
 
 ### `GET /profiles`
 
@@ -34,7 +40,7 @@ Returns voice profiles containing at least `id`, `name`, `language`, and metadat
 
 Returns Voicebox health and model/GPU state.
 
-Do not build a polling loop unless a future Voicebox contract requires one. Do not depend on private deployment URLs or undocumented filesystem paths.
+Do not poll repeatedly: consume the documented status SSE stream once. Do not depend on private deployment URLs or undocumented filesystem paths.
 
 ## 3. Public API
 
@@ -115,10 +121,12 @@ Unauthenticated readiness check. Probe Voicebox `/health` with a short timeout. 
    - if a stock name is used and no default profile is configured, omit `profile` and let Voicebox apply its documented fallback;
    - do not fetch all profiles on every speech request merely to reimplement Voicebox resolution.
 5. Call `POST {VOICEBOX_BASE_URL}/speak` with `text`, resolved `profile`, resolved `engine`, and optional extensions.
-6. Require a successful response with a non-empty generation `id` and no failed status.
-7. Fetch `GET {VOICEBOX_BASE_URL}/audio/{id}`.
-8. Enforce `MAX_AUDIO_BYTES` while reading the upstream response.
-9. Return or transcode the audio.
+6. Require a successful response with a non-empty generation `id` and a recognised status.
+7. If the initial status is not `completed`, consume `GET {VOICEBOX_BASE_URL}/generate/{id}/status` until a `completed` event. Bound the SSE event and stream sizes, reject malformed or unknown statuses, and fail on terminal failure statuses or premature disconnect.
+8. Apply `VOICEBOX_REQUEST_TIMEOUT_SECONDS` as one wall-clock deadline spanning `/speak`, status completion, and audio download. Individual operations must not reset the full budget.
+9. Fetch `GET {VOICEBOX_BASE_URL}/audio/{id}` only after completion.
+10. Enforce `MAX_AUDIO_BYTES` while reading the upstream response.
+11. Return or transcode the audio.
 
 Send a stable `X-Voicebox-Client-Id` header using `VOICEBOX_CLIENT_ID`.
 
@@ -177,7 +185,7 @@ Use environment variables with typed settings:
 | `VOICEBOX_DEFAULT_PROFILE` | no | — | Mapping for stock OpenAI voice names |
 | `VOICEBOX_DEFAULT_ENGINE` | no | `qwen` | Engine for model aliases |
 | `VOICEBOX_ALLOWED_ENGINES` | no | documented safe set | Comma-separated allowlist |
-| `VOICEBOX_REQUEST_TIMEOUT_SECONDS` | no | `600` | Synthesis timeout |
+| `VOICEBOX_REQUEST_TIMEOUT_SECONDS` | no | `600` | Overall `/speak`, status-stream, and audio-download deadline |
 | `VOICEBOX_HEALTH_TIMEOUT_SECONDS` | no | `5` | Readiness timeout |
 | `MAX_INPUT_CHARS` | no | `4096` | Hard input limit, never above Voicebox's limit |
 | `MAX_AUDIO_BYTES` | no | `104857600` | Upstream audio cap |
@@ -234,6 +242,8 @@ PR and main CI:
 
 Release workflow on `v*` tags:
 
+- Rerun the quality suite, container checks, and vulnerability scan before publishing.
+- Make the publish job depend on those successful checks.
 - Buildx multi-platform build for `linux/amd64,linux/arm64`.
 - Push `ghcr.io/michaelschmidle/voicebox-openai-adapter`.
 - Publish semver tags plus the immutable manifest digest.
@@ -254,6 +264,8 @@ At minimum:
 - missing/invalid client key;
 - optional upstream key is forwarded while client key is not;
 - upstream timeout, connection failure, `4xx`, `5xx`, malformed JSON, missing generation ID, failed status;
+- asynchronous `/speak` completion via bounded SSE, including completed, failed, malformed, oversized, disconnected, prematurely ended, and timed-out streams;
+- one overall synthesis deadline spanning `/speak`, status completion, and audio download;
 - audio download failure and size overflow;
 - ffmpeg error and timeout;
 - logs do not contain a unique canary input or secret;

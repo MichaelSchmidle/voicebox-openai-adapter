@@ -234,8 +234,7 @@ def create_app(
         if body.personality is not None:
             payload["personality"] = body.personality
 
-        generation_id = await _voicebox(request).synthesize(payload)
-        upstream_audio = await _voicebox(request).fetch_audio(generation_id)
+        upstream_audio = await _voicebox(request).synthesize(payload)
         source_format = detect_audio_format(upstream_audio.content_type, upstream_audio.body)
 
         if source_format is body.response_format and math.isclose(body.speed, 1.0):

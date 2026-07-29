@@ -6,15 +6,68 @@ on:
       - "v*"
 
 permissions:
-  contents: write
-  packages: write
-  id-token: write
-  attestations: write
-  artifact-metadata: write
+  contents: read
 
 jobs:
-  publish:
+  quality:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --all-groups --locked
+      - run: uv run ruff format --check .
+      - run: uv run ruff check .
+      - run: uv run mypy src
+      - run: uv run pytest --cov --cov-report=term-missing
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          tags: voicebox-openai-adapter:test
+          build-args: |
+            VCS_REF=${{ github.sha }}
+            VERSION=${{ github.ref_name }}
+      - run: test "$(docker run --rm --entrypoint id voicebox-openai-adapter:test -u)" = "10001"
+      - name: Verify read-only application startup
+        run: >-
+          docker run --rm --read-only
+          --tmpfs /tmp:rw,noexec,nosuid,size=256m,uid=10001,gid=10001
+          --env ADAPTER_API_KEY=release-only-synthetic-key
+          --entrypoint python
+          voicebox-openai-adapter:test
+          -c "from voicebox_openai_adapter.main import app; assert app"
+      - run: docker compose -f deploy/docker-compose.example.yml config
+        env:
+          ADAPTER_API_KEY: release-only-synthetic-key
+      - name: Scan image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: voicebox-openai-adapter:test
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+
+  publish:
+    needs:
+      - quality
+      - container
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-qemu-action@v4
