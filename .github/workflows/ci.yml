@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: astral-sh/setup-uv@v8
+      - uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.12"
           enable-cache: true
@@ -50,7 +50,7 @@ jobs:
         env:
           ADAPTER_API_KEY: ci-only-synthetic-key
       - name: Scan image
-        uses: aquasecurity/trivy-action@0.36.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: voicebox-openai-adapter:test
           format: table
