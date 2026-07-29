@@ -4,7 +4,7 @@
 
 Build a small, production-grade OpenAI-compatible text-to-speech adapter for [Voicebox](https://github.com/jamiepine/voicebox). Open WebUI is the first client, but the API must remain generic.
 
-Read `docs/IMPLEMENTATION_SPEC.md` completely before changing code. It is the authoritative product and security specification. `docs/CODING_AGENT_PROMPT.md` defines the initial implementation task.
+Read `docs/IMPLEMENTATION_SPEC.md` completely before changing code. It is the authoritative product and security specification.
 
 ## Engineering approach
 

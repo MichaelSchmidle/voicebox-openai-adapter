@@ -1,0 +1,39 @@
+services:
+  voicebox-openai-adapter:
+    image: ${VOICEBOX_ADAPTER_IMAGE:-ghcr.io/michaelschmidle/voicebox-openai-adapter:0.1.0}
+    env_file:
+      - path: ../.env
+        required: false
+    user: "10001:10001"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m,uid=10001,gid=10001
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      ADAPTER_API_KEY: ${ADAPTER_API_KEY}
+      VOICEBOX_BASE_URL: ${VOICEBOX_BASE_URL:-http://voicebox:17493}
+      VOICEBOX_CLIENT_ID: ${VOICEBOX_CLIENT_ID:-openai-adapter}
+      VOICEBOX_DEFAULT_ENGINE: ${VOICEBOX_DEFAULT_ENGINE:-qwen}
+      VOICEBOX_ALLOWED_ENGINES: ${VOICEBOX_ALLOWED_ENGINES:-qwen,qwen_custom_voice,luxtts,chatterbox,chatterbox_turbo,tada,kokoro}
+      VOICEBOX_REQUEST_TIMEOUT_SECONDS: ${VOICEBOX_REQUEST_TIMEOUT_SECONDS:-600}
+      VOICEBOX_HEALTH_TIMEOUT_SECONDS: ${VOICEBOX_HEALTH_TIMEOUT_SECONDS:-5}
+      MAX_INPUT_CHARS: ${MAX_INPUT_CHARS:-4096}
+      MAX_AUDIO_BYTES: ${MAX_AUDIO_BYTES:-104857600}
+      FFMPEG_TIMEOUT_SECONDS: ${FFMPEG_TIMEOUT_SECONDS:-120}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "127.0.0.1:8000:8000"
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2).read()
+      interval: 30s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
