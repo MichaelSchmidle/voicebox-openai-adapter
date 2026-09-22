@@ -153,7 +153,17 @@ ghcr.io/michaelschmidle/voicebox-openai-adapter
 ```
 
 Production deployments should use a semantic version and pin the immutable manifest digest
-reported by the release workflow. `latest` is intentionally not published or recommended.
+reported by the release workflow. `latest` is a convenience alias updated by stable semver
+releases; prereleases do not update it. It is mutable, so digest pins remain recommended
+for reproducible production deployments.
+
+```bash
+docker pull ghcr.io/michaelschmidle/voicebox-openai-adapter:latest
+```
+
+The manually dispatched `Backfill latest (0.1.1)` workflow aliases the existing verified
+0.1.1 image without rebuilding it. Run it only for the initial backfill: it deliberately
+uses that fixed digest and refuses to run once the latest stable GitHub release changes.
 
 ## Security and privacy
 
