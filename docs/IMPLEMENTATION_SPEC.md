@@ -248,7 +248,7 @@ Release workflow on `v*` tags:
 - Push `ghcr.io/michaelschmidle/voicebox-openai-adapter`.
 - Publish semver tags plus the immutable manifest digest.
 - Generate SBOM and provenance.
-- Never publish `latest` as the deployment recommendation. An `edge` tag from `main` is optional and must be clearly non-production.
+- Publish `latest` as a convenience alias for stable semver releases only, never as the production deployment recommendation; retain immutable digest guidance. An `edge` tag from `main` is optional and must be clearly non-production.
 
 ## 12. Required tests
 

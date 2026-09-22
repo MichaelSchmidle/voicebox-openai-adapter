@@ -5,6 +5,10 @@ on:
     tags:
       - "v*"
 
+concurrency:
+  group: publish-release-image
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
@@ -81,7 +85,7 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ghcr.io/michaelschmidle/voicebox-openai-adapter
-          flavor: latest=false
+          flavor: latest=auto
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
