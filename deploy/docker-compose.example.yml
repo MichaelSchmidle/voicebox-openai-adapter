@@ -1,6 +1,6 @@
 services:
   voicebox-openai-adapter:
-    image: ${VOICEBOX_ADAPTER_IMAGE:-ghcr.io/michaelschmidle/voicebox-openai-adapter:0.1.0}
+    image: ${VOICEBOX_ADAPTER_IMAGE:-ghcr.io/michaelschmidle/voicebox-openai-adapter:0.1.1}
     env_file:
       - path: ../.env
         required: false

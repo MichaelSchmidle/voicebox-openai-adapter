@@ -36,7 +36,7 @@ jobs:
           tags: voicebox-openai-adapter:test
           build-args: |
             VCS_REF=${{ github.sha }}
-            VERSION=0.1.0
+            VERSION=0.1.1
       - run: test "$(docker run --rm --entrypoint id voicebox-openai-adapter:test -u)" = "10001"
       - name: Verify read-only application startup
         run: >-

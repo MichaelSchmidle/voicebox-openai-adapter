@@ -18,7 +18,7 @@ RUN uv sync --frozen --no-dev --no-editable
 FROM python:3.12-slim-bookworm@sha256:392307d22300de8b5986851a12d9176dfc0fc073e65bf6523ebd7dcbeb23564e AS runtime
 
 ARG VCS_REF=unknown
-ARG VERSION=0.1.0
+ARG VERSION=0.1.1
 
 LABEL org.opencontainers.image.title="Voicebox OpenAI Adapter" \
       org.opencontainers.image.description="OpenAI-compatible text-to-speech adapter for Voicebox" \
