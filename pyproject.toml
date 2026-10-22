@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "voicebox-openai-adapter"
-version = "0.1.2"
+version = "0.1.3"
 description = "OpenAI-compatible text-to-speech adapter for Voicebox"
 readme = "README.md"
 license = { file = "LICENSE" }
