@@ -82,7 +82,7 @@ def create_app(
 
     app = FastAPI(
         title="Voicebox OpenAI Adapter",
-        version="0.1.3",
+        version="0.1.4",
         lifespan=lifespan,
     )
 
